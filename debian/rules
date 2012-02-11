@@ -11,3 +11,8 @@
 
 %:
 	dh $@ 
+
+#FIXME
+override_dh_install:
+	cd debian/mpristester && mkdir -p usr/bin
+	cp -a obj-i686-linux-gnu/mpristester debian/mpristester/usr/bin
