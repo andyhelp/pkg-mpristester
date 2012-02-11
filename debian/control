@@ -1,0 +1,15 @@
+Source: mpristester
+Section: devel
+Priority: extra
+Maintainer: Andrzej Bieniek <andyhelp@gmail.com>
+Build-Depends: debhelper (>= 8.0.0), cmake
+Standards-Version: 3.9.2
+Homepage: https://github.com/randomguy3/mpristester
+#Vcs-Git: git://git.debian.org/collab-maint/mpristester.git
+#Vcs-Browser: http://git.debian.org/?p=collab-maint/mpristester.git;a=summary
+
+Package: mpristester
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: MPRIS2 test tool
+ Simple tool to test the MPRIS2 interface of media players.
