@@ -5,8 +5,8 @@ Maintainer: Andrzej Bieniek <andyhelp@gmail.com>
 Build-Depends: debhelper (>= 8.0.0), cmake (>= 2.8.0), libqt4-dev (>= 4.6)
 Standards-Version: 3.9.2
 Homepage: https://github.com/randomguy3/mpristester
-#Vcs-Git: git://git.debian.org/collab-maint/mpristester.git
-#Vcs-Browser: http://git.debian.org/?p=collab-maint/mpristester.git;a=summary
+Vcs-Git: git://github.com/andyhelp/pkg-mpristester.git
+Vcs-Browser: https://github.com/andyhelp/pkg-mpristester
 
 Package: mpristester
 Architecture: any
