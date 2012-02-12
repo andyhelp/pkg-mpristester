@@ -2,7 +2,7 @@ Source: mpristester
 Section: devel
 Priority: extra
 Maintainer: Andrzej Bieniek <andyhelp@gmail.com>
-Build-Depends: debhelper (>= 8.0.0), cmake
+Build-Depends: debhelper (>= 8.0.0), cmake (>= 2.8.0), libqt4-dev (>= 4.6)
 Standards-Version: 3.9.2
 Homepage: https://github.com/randomguy3/mpristester
 #Vcs-Git: git://git.debian.org/collab-maint/mpristester.git
