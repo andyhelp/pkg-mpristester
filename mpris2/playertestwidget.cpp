@@ -20,7 +20,11 @@
 
 #include "playertestwidget.h"
 #include "playerinterfacetest.h"
+
+#include <math.h>
+
 #include <qdebug.h>
+
 #include <QTimer>
 #include <QDBusObjectPath>
 
@@ -33,6 +37,14 @@ PlayerTestWidget::PlayerTestWidget(PlayerInterfaceTest* test, QWidget* parent)
     ui.loopStatusCombo->addItem("None");
     ui.loopStatusCombo->addItem("Track");
     ui.loopStatusCombo->addItem("Playlist");
+    ui.seekTimeUnits->addItem(QString::fromUtf8("µs"));
+    ui.seekTimeUnits->addItem("ms");
+    ui.seekTimeUnits->addItem("s");
+    ui.seekTimeUnits->setCurrentIndex(0);
+    ui.setPosTimeUnits->addItem(QString::fromUtf8("µs"));
+    ui.setPosTimeUnits->addItem("ms");
+    ui.setPosTimeUnits->addItem("s");
+    ui.setPosTimeUnits->setCurrentIndex(0);
     metadataModel = new MetadataModel(this);
     ui.metadataTableView->setModel(metadataModel);
     this->test = test;
@@ -90,71 +102,48 @@ void PlayerTestWidget::runIncrementalTest()
     test->incrementalTest();
 }
 
+static QString formatTimeUs(qlonglong time)
+{
+    qlonglong secs = static_cast<qlonglong>(round(time / 1000000.0));
+    qlonglong mins = secs / 60;
+    secs = secs % 60;
+    return QString::number(time) + QString::fromUtf8("µs (")
+            + QString::number(mins) + ":"
+            + QString::number(secs).rightJustified(2, '0') + ")";
+}
+
 void PlayerTestWidget::propertiesChanged(const QStringList& properties)
 {
     Q_UNUSED(properties)
 
-    if (test->properties().contains("PlaybackStatus")) {
-        ui.playbackStatusLbl->setText(test->properties().value("PlaybackStatus").toString());
-        ui.playbackStatusLbl->setEnabled(true);
-    }
-    if (test->properties().contains("LoopStatus")) {
-        ui.loopStatusLbl->setText(test->properties().value("LoopStatus").toString());
-        ui.loopStatusLbl->setEnabled(true);
-    }
-    if (test->properties().contains("CanGoNext")) {
-        ui.canGoNextLbl->setText(test->properties().value("CanGoNext").toBool() ? "Yes" : "No");
-        ui.canGoNextLbl->setEnabled(true);
-    }
-    if (test->properties().contains("CanGoPrevious")) {
-        ui.canGoPrevLbl->setText(test->properties().value("CanGoPrevious").toBool() ? "Yes" : "No");
-        ui.canGoPrevLbl->setEnabled(true);
-    }
-    if (test->properties().contains("CanPlay")) {
-        ui.canPlayLbl->setText(test->properties().value("CanPlay").toBool() ? "Yes" : "No");
-        ui.canPlayLbl->setEnabled(true);
-    }
-    if (test->properties().contains("CanPause")) {
-        ui.canPauseLbl->setText(test->properties().value("CanPause").toBool() ? "Yes" : "No");
-        ui.canPauseLbl->setEnabled(true);
-    }
-    if (test->properties().contains("CanSeek")) {
-        ui.canSeekLbl->setText(test->properties().value("CanSeek").toBool() ? "Yes" : "No");
-        ui.canSeekLbl->setEnabled(true);
-    }
-    if (test->properties().contains("CanControl")) {
-        ui.canControlLbl->setText(test->properties().value("CanControl").toBool() ? "Yes" : "No");
-        ui.canControlLbl->setEnabled(true);
-    }
-    if (test->properties().contains("Shuffle")) {
-        ui.shuffleLbl->setText(test->properties().value("Shuffle").toBool() ? "Yes" : "No");
-        ui.shuffleLbl->setEnabled(true);
-    }
-    if (test->properties().contains("Rate")) {
-        ui.rateLbl->setText(QString::number(test->properties().value("Rate").toDouble(), 'g', 2));
-        ui.rateLbl->setEnabled(true);
-    }
-    if (test->properties().contains("MinimumRate")) {
-        ui.minRateLbl->setText(QString::number(test->properties().value("MinimumRate").toDouble(), 'g', 2));
-        ui.minRateLbl->setEnabled(true);
-    }
-    if (test->properties().contains("MaximumRate")) {
-        ui.maxRateLbl->setText(QString::number(test->properties().value("MaximumRate").toDouble(), 'g', 2));
-        ui.maxRateLbl->setEnabled(true);
-    }
-    if (test->properties().contains("Volume")) {
-        ui.volumeLbl->setText(QString::number(test->properties().value("Volume").toDouble(), 'g', 2));
-        ui.volumeLbl->setEnabled(true);
-    }
+    updateStringPropLabel("PlaybackStatus", ui.playbackStatusLbl);
+    updateStringPropLabel("LoopStatus", ui.loopStatusLbl);
+    updateBoolPropLabel("CanGoNext", ui.canGoNextLbl);
+    updateBoolPropLabel("CanGoPrevious", ui.canGoPrevLbl);
+    updateBoolPropLabel("CanPlay", ui.canPlayLbl);
+    updateBoolPropLabel("CanPause", ui.canPauseLbl);
+    updateBoolPropLabel("CanSeek", ui.canSeekLbl);
+    updateBoolPropLabel("CanControl", ui.canControlLbl);
+    updateBoolPropLabel("Shuffle", ui.shuffleLbl);
+    updateDoublePropLabel("Rate", ui.rateLbl);
+    updateDoublePropLabel("MinimumRate", ui.minRateLbl);
+    updateDoublePropLabel("MaximumRate", ui.maxRateLbl);
+    updateDoublePropLabel("Volume", ui.volumeLbl);
     if (test->properties().contains("Position")) {
-        ui.lastKnownPosLbl->setText(QString::number(test->properties().value("Position").toLongLong()) + "ns");
+        ui.lastKnownPosLbl->setText(formatTimeUs(test->properties().value("Position").toLongLong()));
         ui.lastKnownPosLbl->setEnabled(true);
+    } else {
+        ui.lastKnownPosLbl->setText("<unknown>");
+        ui.lastKnownPosLbl->setEnabled(false);
     }
     if (test->predictedPosition() >= 0) {
-        ui.estPosLbl->setText(QString::number(test->predictedPosition()) + "ns");
+        ui.estPosLbl->setText(formatTimeUs(test->predictedPosition()));
         ui.estPosLbl->setEnabled(true);
         if (!estPosTimer->isActive())
             estPosTimer->start();
+    } else {
+        ui.estPosLbl->setText("<unknown>");
+        ui.estPosLbl->setEnabled(false);
     }
     if (test->properties().contains("Metadata")) {
         if (test->properties().value("Metadata").type() != QVariant::Map) {
@@ -170,23 +159,39 @@ void PlayerTestWidget::propertiesChanged(const QStringList& properties)
             ui.setPosTrackIdEdit->setText(trackId);
             lastSetTrackId = trackId;
         }
+    } else {
+        ui.metadataTableView->setEnabled(false);
     }
 }
 
 void PlayerTestWidget::updateEstPos()
 {
-    ui.estPosLbl->setText(QString::number(test->predictedPosition()) + "ns");
+    if (test->predictedPosition() >= 0) {
+        ui.estPosLbl->setText(formatTimeUs(test->predictedPosition()));
+        ui.estPosLbl->setEnabled(true);
+    } else {
+        ui.estPosLbl->setText("<unknown>");
+        ui.estPosLbl->setEnabled(false);
+    }
 }
 
 void PlayerTestWidget::testSeek()
 {
-    qint64 offset = (qint64)ui.seekSpinBox->value() * 1000;
+    qint64 offset = (qint64)ui.seekSpinBox->value(); // µs
+    if (ui.seekTimeUnits->currentIndex() > 0)
+        offset *= 1000;  // ms
+    if (ui.seekTimeUnits->currentIndex() > 1)
+        offset *= 1000;  // s
     test->testSeek(offset);
 }
 
 void PlayerTestWidget::testSetPos()
 {
-    qint64 pos = (qint64)ui.setPosSpinBox->value() * 1000;
+    qint64 pos = (qint64)ui.setPosSpinBox->value();  // µs
+    if (ui.setPosTimeUnits->currentIndex() > 0)
+        pos *= 1000;  // ms
+    if (ui.setPosTimeUnits->currentIndex() > 1)
+        pos *= 1000;  // s
     test->testSetPosition(QDBusObjectPath(ui.setPosTrackIdEdit->text()), pos);
 }
 
@@ -197,7 +202,7 @@ void PlayerTestWidget::testOpenUri()
 
 void PlayerTestWidget::Seeked(qint64 position)
 {
-    ui.lastKnownPosLbl->setText(QString::number(position) + "ns");
+    ui.lastKnownPosLbl->setText(formatTimeUs(position));
     ui.lastKnownPosLbl->setEnabled(true);
 }
 
@@ -224,6 +229,39 @@ void PlayerTestWidget::testSetVolume()
 void PlayerTestWidget::testSetRate()
 {
     test->testSetRate(ui.rateSpinBox->value());
+}
+
+void PlayerTestWidget::updateBoolPropLabel(const QString& name, QLabel *label)
+{
+    if (test->properties().contains(name)) {
+        label->setText(test->properties().value(name).toBool() ? "Yes" : "No");
+        label->setEnabled(true);
+    } else {
+        label->setText("<unknown>");
+        label->setEnabled(false);
+    }
+}
+
+void PlayerTestWidget::updateStringPropLabel(const QString& name, QLabel *label)
+{
+    if (test->properties().contains(name)) {
+        label->setText(test->properties().value(name).toString());
+        label->setEnabled(true);
+    } else {
+        label->setText("<unknown>");
+        label->setEnabled(false);
+    }
+}
+
+void PlayerTestWidget::updateDoublePropLabel(const QString& name, QLabel *label)
+{
+    if (test->properties().contains(name)) {
+        label->setText(QString::number(test->properties().value(name).toDouble(), 'g', 2));
+        label->setEnabled(true);
+    } else {
+        label->setText("<unknown>");
+        label->setEnabled(false);
+    }
 }
 
 // vim:et:sw=4:sts=4

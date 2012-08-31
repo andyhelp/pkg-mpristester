@@ -15,8 +15,21 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #include "metadatamodel.h"
+
+#include <math.h>
+
 #include <QDBusArgument>
 #include <qdebug.h>
+
+static QString formatTimeUs(qlonglong time)
+{
+    qlonglong secs = static_cast<qlonglong>(round(time / 1000000.0));
+    qlonglong mins = secs / 60;
+    secs = secs % 60;
+    return QString::number(time) + QString::fromUtf8("µs (")
+            + QString::number(mins) + ":"
+            + QString::number(secs).rightJustified(2, '0') + ")";
+}
 
 MetadataModel::MetadataModel(QObject* parent)
     : QAbstractTableModel(parent)
@@ -57,7 +70,11 @@ QVariant MetadataModel::data(const QModelIndex& index, int role) const
                 } else if (m_metadata[key].canConvert<QDBusObjectPath>()) {
                     return m_metadata[key].value<QDBusObjectPath>().path();
                 } else {
-                    return m_metadata[key];
+                    if (key == "mpris:length" && m_metadata[key].canConvert(QVariant::LongLong)) {
+                        return formatTimeUs(m_metadata[key].toLongLong());
+                    } else {
+                        return m_metadata[key];
+                    }
                 }
             }
         }

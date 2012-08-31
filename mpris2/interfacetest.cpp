@@ -203,10 +203,17 @@ bool InterfaceTest::setProp(const QString& propName, const QDBusVariant& propVal
     }
 }
 
-
 bool InterfaceTest::checkPropValid(const QString& propName, QVariant::Type expType, const QVariantMap& oldProps) {
     if (!props.contains(propName)) {
         emit interfaceError(Property, propName, "Property " + propName + " is missing");
+        return false;
+    } else {
+        return checkOptionalPropValid(propName, expType, oldProps);
+    }
+}
+
+bool InterfaceTest::checkOptionalPropValid(const QString& propName, QVariant::Type expType, const QVariantMap& oldProps) {
+    if (!props.contains(propName)) {
         return false;
     } else if (props.value(propName).type() != expType) {
         // FIXME: generate D-Bus type description
@@ -232,6 +239,17 @@ bool InterfaceTest::checkPropValid(const QString& propName, QVariant::Type expTy
         return false;
     }
     return true;
+}
+
+bool InterfaceTest::checkOptionalNonEmptyStringPropValid(const QString& propName, const QVariantMap& oldProps) {
+    if (checkOptionalPropValid(propName, QVariant::String, oldProps)) {
+        if (props[propName].toString().isEmpty()) {
+            emit interfaceError(Property, propName, "Property " + propName + " is present, but empty");
+        } else {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool InterfaceTest::checkNonEmptyStringPropValid(const QString& propName, const QVariantMap& oldProps) {
@@ -285,23 +303,33 @@ void InterfaceTest::_m_propertiesChanged(const QString& interface,
     Q_UNUSED(interface)
     Q_UNUSED(signalMessage)
 
+    QVariantMap oldProps = props;
+
     QStringList changedPropsList = invalidatedProperties;
     QVariantMap::const_iterator i = changedProperties.constBegin();
     while (i != changedProperties.constEnd()) {
-        props[i.key()] = i.value();
-        checkUpdatedProperty(i.key());
-        outOfDateProperties.remove(i.key());
-        changedPropsList << i.key();
+        if (propsNotUpdated.contains(i.key())) {
+            emit interfaceError(Signal, "PropertiesChanged", "PropertiesChanged signal sent for " + i.key() + "; you almost certainly didn't want to do this");
+        } else {
+            props[i.key()] = i.value();
+            checkUpdatedProperty(i.key());
+            outOfDateProperties.remove(i.key());
+            changedPropsList << i.key();
+        }
         ++i;
     }
     QStringList::const_iterator j = invalidatedProperties.constBegin();
     while (j != invalidatedProperties.constEnd()) {
-        if (getProp(*j))
-            checkUpdatedProperty(*j);
-        outOfDateProperties.remove(*j);
+        if (propsNotUpdated.contains(*j)) {
+            emit interfaceError(Signal, "PropertiesChanged", "PropertiesChanged signal sent for " + *j + "; you almost certainly didn't want to do this");
+        } else {
+            if (getProp(*j))
+                checkUpdatedProperty(*j);
+            outOfDateProperties.remove(*j);
+        }
         ++j;
     }
-    checkConsistency();
+    checkConsistency(oldProps);
 
     emit propertiesChanged(changedPropsList);
 }
@@ -335,7 +363,9 @@ void InterfaceTest::checkMetadata(const QVariantMap& metadata,
     } else {
         QDBusObjectPath trackid = metadata.value("mpris:trackid").value<QDBusObjectPath>();
         if (trackid.path().isEmpty()) {
-            (*errors) << "mpris:trackid entry is an empty path";
+            (*errors) << "mpris:trackid entry is an empty path (seriously, how did you convince D-Bus to let you do that?)";
+        } else if (trackid.path() == "/org/mpris/MediaPlayer2/TrackList/NoTrack") {
+            (*warnings) << "mpris:trackid entry indicates \"no track\"; for compatibility with older clients, this should be represented by providing no metadata";
         } else if (trackid.path().startsWith("/org/mpris/")) {
             (*warnings) << "The /org/mpris/ namespace is reserved, and should not be used for track ids";
         }
@@ -351,7 +381,7 @@ void InterfaceTest::checkMetadata(const QVariantMap& metadata,
         } else {
             if (asUrl.scheme() == "file") {
                 if (!QFile::exists(asUrl.toLocalFile())) {
-                    (*infoMessages) << "mpris:artUrl references a file that does not exist";
+                    (*infoMessages) << "mpris:artUrl references a file that does not exist:" << asUrl.toLocalFile();
                 }
             }
             // TODO: check network files

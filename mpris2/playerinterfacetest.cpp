@@ -28,7 +28,7 @@ PlayerInterfaceTest::PlayerInterfaceTest(const QString& service, QObject* parent
     : InterfaceTest(MPRIS2_PLAYER_IFACE, service, parent)
 {
     m_pos = -1;
-    m_currentRate = 0.0;
+    m_effectiveRate = 0.0;
     propsNotUpdated << "Position";
 }
 
@@ -76,7 +76,7 @@ void PlayerInterfaceTest::checkUpdatedProperty(const QString& propName)
     } else if (propName == "Rate") {
         checkPropValid("Rate", QVariant::Double);
     } else if (propName == "Metadata") {
-        checkMetadata();
+        checkMetadata(true);
     }
 }
 
@@ -116,9 +116,9 @@ void PlayerInterfaceTest::checkProps(const QVariantMap& oldProps)
     checkMinimumRate(oldProps);
     checkMaximumRate(oldProps);
     checkPropValid("Rate", QVariant::Double, oldProps);
-    checkMetadata(oldProps);
+    checkMetadata(false, oldProps);
 
-    checkConsistency();
+    checkConsistency(oldProps);
 }
 
 void PlayerInterfaceTest::checkControlProp(const QString& propName, const QVariantMap& oldProps)
@@ -238,7 +238,7 @@ static bool compare(const QVariantMap& one, const QVariantMap& other)
     return true;
 }
 
-void PlayerInterfaceTest::checkMetadata(const QVariantMap& oldProps)
+void PlayerInterfaceTest::checkMetadata(bool updatePosition, const QVariantMap& oldProps)
 {
     if (!props.contains("Metadata")) {
         emit interfaceError(Property, "Metadata", "Property Metadata is missing");
@@ -277,9 +277,18 @@ void PlayerInterfaceTest::checkMetadata(const QVariantMap& oldProps)
             return;
         }
     }
+
+    if (updatePosition) {
+        QDBusObjectPath oldTrackId = m_currentTrack;
+        m_currentTrack = metadata.value("mpris:trackid").value<QDBusObjectPath>();
+        if (oldTrackId != m_currentTrack) {
+            emit interfaceInfo(Property, "Metadata", "Track changed (assuming Position is now 0)");
+            m_pos = 0;
+            m_posLastCalculated = QTime::currentTime();
+        }
+    }
+
     if (metadata.isEmpty()) {
-        emit interfaceInfo(Property, "Metadata",
-                           "No metadata provided for the current track");
         return;
     }
 
@@ -316,6 +325,17 @@ void PlayerInterfaceTest::checkConsistency(const QVariantMap& oldProps)
 {
     checkRateConsistency();
     checkPositionConsistency();
+
+    if (properties().value("PlaybackStatus") != oldProps.value("PlaybackStatus") ||
+        properties().value("CanPause") != oldProps.value("CanPause")) {
+        if (properties().value("CanControl").toBool() && !properties().value("CanPause").toBool()) {
+            if (properties().value("PlaybackStatus").toString() == QLatin1String("Paused")) {
+                emit interfaceError(Property, "CanPause",
+                                    "CanPause is false (and CanControl is true), but the "
+                                    "media player is paused (and so clearly can be paused)!");
+            }
+        }
+    }
 }
 
 void PlayerInterfaceTest::checkPositionConsistency(const QVariantMap& oldProps)
@@ -397,11 +417,14 @@ void PlayerInterfaceTest::checkRateConsistency(const QVariantMap& oldProps)
 
 void PlayerInterfaceTest::updateCurrentRate()
 {
+    m_pos = predictedPosition();
+    m_posLastCalculated = QTime::currentTime();
+
     QString playbackStatus = properties().value("PlaybackStatus").toString();
     if (playbackStatus == "Playing") {
-        m_currentRate = properties().value("Rate").toDouble();
+        m_effectiveRate = properties().value("Rate").toDouble();
     } else {
-        m_currentRate = 0.0;
+        m_effectiveRate = 0.0;
     }
 }
 
@@ -409,7 +432,7 @@ void PlayerInterfaceTest::_m_seeked(qint64 position, const QDBusMessage& message
 {
     emit interfaceInfo(Signal, "Seeked", "Got Seeked(" + QString::number(position) + ") signal");
     m_pos = position;
-    m_posLastUpdated = QTime::currentTime();
+    m_posLastCalculated = QTime::currentTime();
     props["Position"] = position;
     checkPosition();
     emit Seeked(position);
@@ -417,8 +440,8 @@ void PlayerInterfaceTest::_m_seeked(qint64 position, const QDBusMessage& message
 
 qint64 PlayerInterfaceTest::predictedPosition()
 {
-    qint64 elapsed = (qint64)m_posLastUpdated.elapsed() * 1000L;
-    return m_pos + (m_currentRate * elapsed);
+    qint64 elapsed = (qint64)m_posLastCalculated.elapsed() * 1000L;
+    return m_pos + (m_effectiveRate * elapsed);
 }
 
 void PlayerInterfaceTest::checkPredictedPosition()
@@ -428,14 +451,14 @@ void PlayerInterfaceTest::checkPredictedPosition()
     // if this is the initial fetch
     if (m_pos == -1) {
         m_pos = position;
-        m_posLastUpdated = QTime::currentTime();
+        m_posLastCalculated = QTime::currentTime();
         updateCurrentRate();
         return;
     }
 
     qint64 predictedPos = predictedPosition();
     m_pos = position;
-    m_posLastUpdated = QTime::currentTime();
+    m_posLastCalculated = QTime::currentTime();
     updateCurrentRate();
 
     qint64 diffMillis = (position - predictedPos) / 1000;
@@ -462,7 +485,7 @@ void PlayerInterfaceTest::checkPredictedPosition()
                                   QString::number(positionSecs, 'f', 2) +
                                   "s) is " +
                                   QString::number(-diffSecs, 'f', 2) +
-                                  "s ahead of what was predicted from Rate (" +
+                                  "s behind what was predicted from Rate (" +
                                   QString::number(predictedPosSecs, 'f', 2) +
                                   "s)");
         }
